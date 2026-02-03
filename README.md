@@ -93,6 +93,7 @@ The app is set up to deploy from [GitHub](https://github.com/jeduardomalo/pilate
 - **`DATABASE_URL`** – PostgreSQL connection string (e.g. Neon, Supabase, or Vercel Postgres).
 - **`NEXTAUTH_SECRET`** – A long random string (e.g. `openssl rand -base64 32`).
 - **`NEXTAUTH_URL`** – Your production URL, e.g. `https://your-project.vercel.app`.
+- **Google Calendar (optional):** To use “Connect” on the Schedule page, add **`GOOGLE_CLIENT_ID`**, **`GOOGLE_CLIENT_SECRET`**, and **`GOOGLE_REDIRECT_URI`** (e.g. `https://your-domain.com/api/google/auth/callback`). Create OAuth credentials in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and add the redirect URI there exactly.
 
 Then run `npm run db:push` and `npm run create-admin` against your production DB so the schema and admin user exist. Redeploy after adding env vars if needed.
 

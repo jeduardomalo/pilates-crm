@@ -2,7 +2,12 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { createGoogleEvent, deleteGoogleEvent, updateGoogleEvent } from "@/lib/googleCalendar";
+import {
+  createGoogleEvent,
+  deleteGoogleEvent,
+  getGoogleIntegration,
+  updateGoogleEvent,
+} from "@/lib/googleCalendar";
 
 /** Race a promise against a timeout; return fallback if timeout wins. Use so DB hangs don't block the UI. */
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -662,6 +667,38 @@ export async function deleteSession(sessionId: string) {
   }
 }
 
+export async function updateSession(
+  sessionId: string,
+  input: { date: string; type: string; location: string; price: number; isPaid: boolean }
+) {
+  try {
+    const session = await db.session.findUnique({ where: { id: sessionId } });
+    if (!session) return { success: false, error: "Session not found" };
+
+    const date = new Date(input.date);
+    if (isNaN(date.getTime())) return { success: false, error: "Invalid date" };
+
+    await db.session.update({
+      where: { id: sessionId },
+      data: {
+        date,
+        type: input.type || session.type,
+        location: input.location || session.location,
+        price: input.price,
+        isPaid: input.isPaid,
+      },
+    });
+
+    revalidatePath("/");
+    revalidatePath("/collectibles");
+    revalidatePath("/clients");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update session:", error);
+    return { success: false, error: "Failed to update session" };
+  }
+}
+
 type ScheduledParticipantInput = {
   clientId: string;
   price: number;
@@ -755,6 +792,126 @@ export async function getScheduleWeek(weekStartIso: string) {
   }));
 }
 
+function isGoogleEventNotFound(e: unknown): boolean {
+  if (e && typeof e === "object") {
+    const code = "code" in e ? (e as { code?: number }).code : undefined;
+    const status = "response" in e && (e as { response?: { status?: number } }).response?.status;
+    return code === 404 || code === 410 || status === 404 || status === 410;
+  }
+  return false;
+}
+
+export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<{
+  success: boolean;
+  error?: string;
+  exportedCount?: number;
+}> {
+  const integration = await getGoogleIntegration();
+  if (!integration) {
+    return { success: false, error: "Not connected" };
+  }
+
+  ensureScheduledClassModel();
+  const start = new Date(weekStartIso);
+  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const weekClasses = await db.scheduledClass.findMany({
+    where: { start: { gte: start, lt: end } },
+    include: {
+      participants: { include: { client: true }, orderBy: { createdAt: "asc" } },
+    },
+    orderBy: { start: "asc" },
+  });
+
+  let exportedCount = 0;
+  try {
+    for (const sc of weekClasses) {
+      const clientNames = sc.participants.map((p) => p.client.name).join(" + ");
+      const summary = buildGoogleSummary(sc.type, clientNames);
+      const description = buildGoogleDescription({
+        type: sc.type,
+        location: sc.location,
+        notes: sc.notes,
+        participants: sc.participants.map((p) => ({
+          name: p.client.name,
+          price: Number(p.price),
+          isPaid: p.isPaid,
+          usePackage: p.usePackage,
+        })),
+      });
+
+      if (sc.status === "SCHEDULED") {
+        if (sc.googleEventId) {
+          try {
+            await updateGoogleEvent({
+              googleEventId: sc.googleEventId,
+              scheduledClassId: sc.id,
+              start: sc.start,
+              end: sc.end,
+              summary,
+              location: sc.location,
+              description,
+            });
+          } catch (e) {
+            if (isGoogleEventNotFound(e)) {
+              await db.scheduledClass.update({
+                where: { id: sc.id },
+                data: { googleEventId: null },
+              });
+              const eventId = await createGoogleEvent({
+                scheduledClassId: sc.id,
+                start: sc.start,
+                end: sc.end,
+                summary,
+                location: sc.location,
+                description,
+              });
+              if (eventId) {
+                await db.scheduledClass.update({
+                  where: { id: sc.id },
+                  data: { googleEventId: eventId },
+                });
+              }
+            } else {
+              throw e;
+            }
+          }
+        } else {
+          const eventId = await createGoogleEvent({
+            scheduledClassId: sc.id,
+            start: sc.start,
+            end: sc.end,
+            summary,
+            location: sc.location,
+            description,
+          });
+          if (eventId) {
+            await db.scheduledClass.update({
+              where: { id: sc.id },
+              data: { googleEventId: eventId },
+            });
+          }
+        }
+        exportedCount++;
+      } else if (sc.googleEventId) {
+        await deleteGoogleEvent(sc.googleEventId);
+        await db.scheduledClass.update({
+          where: { id: sc.id },
+          data: { googleEventId: null },
+        });
+      }
+    }
+    revalidatePath("/schedule");
+    return { success: true, exportedCount };
+  } catch (error) {
+    console.error("Export week to Google failed:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Export failed",
+    };
+  }
+}
+
 export async function createScheduledClass(input: ScheduledClassInput) {
   try {
     const start = new Date(input.start);
@@ -791,34 +948,6 @@ export async function createScheduledClass(input: ScheduledClassInput) {
       },
     });
 
-    // Google sync (one-way CRM -> Google)
-    const clientNames = created.participants.map((p) => p.client.name).join(" + ");
-    const eventId = await createGoogleEvent({
-      scheduledClassId: created.id,
-      start: created.start,
-      end: created.end,
-      summary: buildGoogleSummary(created.type, clientNames),
-      location: created.location,
-      description: buildGoogleDescription({
-        type: created.type,
-        location: created.location,
-        notes: created.notes,
-        participants: created.participants.map((p) => ({
-          name: p.client.name,
-          price: Number(p.price),
-          isPaid: p.isPaid,
-          usePackage: p.usePackage,
-        })),
-      }),
-    });
-
-    if (eventId) {
-      await db.scheduledClass.update({
-        where: { id: created.id },
-        data: { googleEventId: eventId },
-      });
-    }
-
     revalidatePath("/schedule");
     return { success: true, id: created.id };
   } catch (error) {
@@ -847,7 +976,7 @@ export async function createScheduledClasses(inputs: ScheduledClassInput[]) {
         return { success: false, error: "Duplicate client selected.", count: created };
       }
 
-      const record = await db.scheduledClass.create({
+      await db.scheduledClass.create({
         data: {
           start,
           end,
@@ -868,32 +997,6 @@ export async function createScheduledClasses(inputs: ScheduledClassInput[]) {
         },
       });
 
-      const clientNames = record.participants.map((p) => p.client.name).join(" + ");
-      const eventId = await createGoogleEvent({
-        scheduledClassId: record.id,
-        start: record.start,
-        end: record.end,
-        summary: buildGoogleSummary(record.type, clientNames),
-        location: record.location,
-        description: buildGoogleDescription({
-          type: record.type,
-          location: record.location,
-          notes: record.notes,
-          participants: record.participants.map((p) => ({
-            name: p.client.name,
-            price: Number(p.price),
-            isPaid: p.isPaid,
-            usePackage: p.usePackage,
-          })),
-        }),
-      });
-
-      if (eventId) {
-        await db.scheduledClass.update({
-          where: { id: record.id },
-          data: { googleEventId: eventId },
-        });
-      }
       created++;
     }
     revalidatePath("/schedule");
@@ -951,47 +1054,6 @@ export async function updateScheduledClass(id: string, input: ScheduledClassInpu
       });
     });
 
-    const clientNames = updated.participants.map((p) => p.client.name).join(" + ");
-    const summary = buildGoogleSummary(updated.type, clientNames);
-    const description = buildGoogleDescription({
-      type: updated.type,
-      location: updated.location,
-      notes: updated.notes,
-      participants: updated.participants.map((p) => ({
-        name: p.client.name,
-        price: Number(p.price),
-        isPaid: p.isPaid,
-        usePackage: p.usePackage,
-      })),
-    });
-
-    if (updated.googleEventId) {
-      await updateGoogleEvent({
-        googleEventId: updated.googleEventId,
-        scheduledClassId: updated.id,
-        start: updated.start,
-        end: updated.end,
-        summary,
-        location: updated.location,
-        description,
-      });
-    } else {
-      const eventId = await createGoogleEvent({
-        scheduledClassId: updated.id,
-        start: updated.start,
-        end: updated.end,
-        summary,
-        location: updated.location,
-        description,
-      });
-      if (eventId) {
-        await db.scheduledClass.update({
-          where: { id: updated.id },
-          data: { googleEventId: eventId },
-        });
-      }
-    }
-
     revalidatePath("/schedule");
     return { success: true };
   } catch (error) {
@@ -1011,14 +1073,13 @@ export async function cancelScheduledClass(
       return { success: false, error: "Only scheduled classes can be cancelled." };
     }
 
-    await db.scheduledClass.update({
-      where: { id },
-      data: { status },
-    });
-
     if (existing.googleEventId) {
       await deleteGoogleEvent(existing.googleEventId);
     }
+    await db.scheduledClass.update({
+      where: { id },
+      data: { status, googleEventId: null },
+    });
 
     revalidatePath("/schedule");
     return { success: true };
@@ -1045,15 +1106,22 @@ export async function postScheduledClass(
     }
 
     if (resolution === "cancelled" || resolution === "no_show") {
-      await db.scheduledClass.update({
-        where: { id },
-        data: { status: resolution === "cancelled" ? "CANCELLED" : "NO_SHOW" },
-      });
       if (scheduled.googleEventId) {
         await deleteGoogleEvent(scheduled.googleEventId);
       }
+      await db.scheduledClass.update({
+        where: { id },
+        data: {
+          status: resolution === "cancelled" ? "CANCELLED" : "NO_SHOW",
+          googleEventId: null,
+        },
+      });
       revalidatePath("/schedule");
       return { success: true };
+    }
+
+    if (scheduled.googleEventId) {
+      await deleteGoogleEvent(scheduled.googleEventId);
     }
 
     const now = new Date();
@@ -1092,7 +1160,7 @@ export async function postScheduledClass(
 
       await tx.scheduledClass.update({
         where: { id },
-        data: { status: "POSTED", postedAt: now },
+        data: { status: "POSTED", postedAt: now, googleEventId: null },
       });
     });
 

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import Link from "next/link";
-import { Receipt, Trash2 } from "lucide-react";
+import { Receipt, Trash2, Edit2 } from "lucide-react";
 import { ReceiptModal } from "./ReceiptModal";
-import { deleteSession } from "@/app/actions";
+import { deleteSession, updateSession } from "@/app/actions";
 import { useRouter } from "next/navigation";
 
 interface ClassLogTableProps {
@@ -19,6 +19,8 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
   const [selectedReceiptSession, setSelectedReceiptSession] = useState<any | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState<any | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Filter out "Package Purchase" unless explicitly included
   const displaySessions = includePackagePurchases 
@@ -126,16 +128,29 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
                   </button>
                 </td>
                 <td className="px-6 py-4 text-center">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteConfirm(session.id);
-                    }}
-                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                    title="Delete session"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingSession(session);
+                      }}
+                      className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-sage hover:bg-sand-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      title="Edit session"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteConfirm(session.id);
+                      }}
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                      title="Delete session"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -154,6 +169,20 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
         <ReceiptModal
           session={selectedReceiptSession}
           onClose={() => setSelectedReceiptSession(null)}
+        />
+      )}
+
+      {/* Edit Session Modal */}
+      {editingSession && (
+        <EditSessionModal
+          session={editingSession}
+          onClose={() => setEditingSession(null)}
+          onSaved={() => {
+            setEditingSession(null);
+            router.refresh();
+          }}
+          saving={savingEdit}
+          setSaving={setSavingEdit}
         />
       )}
 
@@ -205,5 +234,149 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
         );
       })()}
     </>
+  );
+}
+
+function toLocalDateString(isoOrDate: string | Date): string {
+  const d = new Date(isoOrDate);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function EditSessionModal({
+  session,
+  onClose,
+  onSaved,
+  saving,
+  setSaving,
+}: {
+  session: any;
+  onClose: () => void;
+  onSaved: () => void;
+  saving: boolean;
+  setSaving: (v: boolean) => void;
+}) {
+  const [date, setDate] = useState(() => (session.date ? toLocalDateString(session.date) : ""));
+  const [type, setType] = useState(session.type || "");
+  const [location, setLocation] = useState(session.location || "");
+  const [price, setPrice] = useState(Number(session.price) ?? 0);
+  const [isPaid, setIsPaid] = useState(!!session.isPaid);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      // Use noon UTC so the calendar day doesn't shift in any timezone
+      const dateIso = `${date}T12:00:00.000Z`;
+      const result = await updateSession(session.id, {
+        date: dateIso,
+        type: type.trim() || session.type,
+        location: location.trim() || session.location,
+        price: Number(price) || 0,
+        isPaid,
+      });
+      if (result.success) onSaved();
+      else alert(result.error || "Failed to update session");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update session");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-sand-200 dark:border-gray-700 p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-serif text-xl text-charcoal dark:text-white">Edit Session</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl leading-none"
+            disabled={saving}
+          >
+            ×
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          {session.clients?.map((c: any) => c.name).join(", ")}
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+            <input
+              type="text"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white"
+              placeholder="e.g. Single, Group"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white"
+              placeholder="e.g. In-Studio"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="edit-session-paid"
+              checked={isPaid}
+              onChange={(e) => setIsPaid(e.target.checked)}
+              className="rounded border-sand-300 text-sage focus:ring-sage"
+            />
+            <label htmlFor="edit-session-paid" className="text-sm text-gray-700 dark:text-gray-300">
+              Paid
+            </label>
+          </div>
+          <div className="flex gap-3 justify-end pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-sage text-white rounded-lg hover:bg-sage/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

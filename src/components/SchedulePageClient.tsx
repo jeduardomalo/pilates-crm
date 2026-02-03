@@ -1,15 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   cancelScheduledClass,
   createScheduledClass,
   createScheduledClasses,
+  exportScheduleWeekToGoogle,
   getScheduleWeek,
   updateScheduledClass,
 } from "@/app/actions";
-import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, X, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 
 type ClientOption = { id: string; name: string };
@@ -120,6 +122,12 @@ export function SchedulePageClient(props: {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+
+  const searchParams = useSearchParams();
+  const googleError = searchParams.get("google") === "error" ? searchParams.get("reason") ?? "error" : null;
+  const [googleErrorDismissed, setGoogleErrorDismissed] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const weekStart = useMemo(() => new Date(weekStartIso), [weekStartIso]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
@@ -274,35 +282,94 @@ export function SchedulePageClient(props: {
         </div>
       </div>
 
+      {/* Google Calendar error banner */}
+      {googleError && !googleErrorDismissed && (
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200">
+          <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium">Google Calendar sync failed</p>
+            <p className="text-sm mt-1 opacity-90">
+              {googleError === "config"
+                ? "Google Calendar is not configured for this environment. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI (see docs/SETUP-GOOGLE-CALENDAR.md in the repo for step-by-step setup)."
+                : "Something went wrong. Check that your Google Cloud OAuth credentials and redirect URI are correct (see docs/SETUP-GOOGLE-CALENDAR.md), then try again."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setGoogleErrorDismissed(true)}
+            className="p-1.5 rounded-lg hover:bg-amber-200/50 dark:hover:bg-amber-800/30 transition-colors"
+            aria-label="Dismiss"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Google connection */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-sand-200 dark:border-gray-700 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-medium text-charcoal dark:text-white">Google Calendar</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              One-way sync from CRM to your primary Google Calendar.
+              Export this week to your primary Google Calendar. Re-export updates existing events (no duplicates).
             </p>
           </div>
           {"connected" in props.googleStatus && props.googleStatus.connected ? (
-            <button
-              onClick={handleDisconnectGoogle}
-              disabled={isPending}
-              className="px-3 py-2 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
-            >
-              Disconnect
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  setExportMessage(null);
+                  setIsExporting(true);
+                  const result = await exportScheduleWeekToGoogle(weekStartIso);
+                  setIsExporting(false);
+                  if (result.success) {
+                    const count = result.exportedCount ?? 0;
+                    const text =
+                      count === 0
+                        ? "No scheduled classes this week to export. Add classes and try again."
+                        : count === 1
+                          ? "1 event exported to Google Calendar."
+                          : `${count} events exported to Google Calendar.`;
+                    setExportMessage({ type: count === 0 ? "error" : "success", text });
+                    refreshWeek();
+                  } else {
+                    setExportMessage({ type: "error", text: result.error ?? "Export failed" });
+                  }
+                }}
+                disabled={isExporting}
+                className="px-3 py-2 rounded-lg bg-sage text-white hover:bg-sage/90 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isExporting ? "Exporting…" : "Export this week to Google Calendar"}
+              </button>
+              <button
+                onClick={handleDisconnectGoogle}
+                disabled={isPending}
+                className="px-3 py-2 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
+              >
+                Disconnect
+              </button>
+            </div>
           ) : (
             <a
               href="/api/google/auth/start"
               className="px-3 py-2 rounded-lg bg-sage text-white hover:bg-sage/90 transition-colors text-sm font-medium"
             >
-              Connect
+              Sync
             </a>
           )}
         </div>
         {"connected" in props.googleStatus && props.googleStatus.connected && (
-          <div className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">
-            Connected to <span className="font-medium">{props.googleStatus.calendarId ?? "primary"}</span>
+          <div className="mt-3 flex flex-col gap-1">
+            <div className="text-sm text-emerald-700 dark:text-emerald-300">
+              Synced to <span className="font-medium">{props.googleStatus.calendarId ?? "primary"}</span>
+            </div>
+            {exportMessage && (
+              <div
+                className={`text-sm ${exportMessage.type === "success" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}
+              >
+                {exportMessage.text}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -358,9 +425,14 @@ export function SchedulePageClient(props: {
 
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button
-                            onClick={() => openEdit(it.id)}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (it.status === "SCHEDULED" && !isPending) openEdit(it.id);
+                            }}
                             disabled={isPending || it.status !== "SCHEDULED"}
-                            className="px-3 py-1.5 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium disabled:opacity-50"
+                            title={it.status !== "SCHEDULED" ? "Only scheduled classes can be edited" : "Edit class"}
+                            className="px-3 py-1.5 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Edit
                           </button>
@@ -506,7 +578,7 @@ function ScheduleEditModal(props: {
               {isEdit ? "Edit scheduled class" : "Add scheduled class"}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              This will sync to Google Calendar if connected. It won’t count until posted.
+              Export this week to Google Calendar after saving. It won’t count until posted.
             </p>
           </div>
           <button
@@ -566,19 +638,13 @@ function ScheduleEditModal(props: {
               <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                 Client
               </label>
-              <select
+              <SearchableClientSelect
+                clients={props.clients}
                 value={clientId1}
-                onChange={(e) => setClientId1(e.target.value)}
+                onChange={setClientId1}
                 disabled={saving}
-                className="w-full border border-sand-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
-              >
-                <option value="">Select Client</option>
-                {props.clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select Client"
+              />
             </div>
           )}
 
@@ -589,41 +655,27 @@ function ScheduleEditModal(props: {
                 <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                   Client 1
                 </label>
-                <select
+                <SearchableClientSelect
+                  clients={props.clients}
                   value={clientId1}
-                  onChange={(e) => setClientId1(e.target.value)}
+                  onChange={setClientId1}
+                  excludeId={clientId2}
                   disabled={saving}
-                  className="w-full border border-sand-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
-                >
-                  <option value="">Select Client</option>
-                  {props.clients
-                    .filter((c) => c.id !== clientId2)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="Select Client"
+                />
               </div>
               <div>
                 <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
                   Client 2
                 </label>
-                <select
+                <SearchableClientSelect
+                  clients={props.clients}
                   value={clientId2}
-                  onChange={(e) => setClientId2(e.target.value)}
+                  onChange={setClientId2}
+                  excludeId={clientId1}
                   disabled={saving}
-                  className="w-full border border-sand-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
-                >
-                  <option value="">Select Client</option>
-                  {props.clients
-                    .filter((c) => c.id !== clientId1)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="Select Client"
+                />
               </div>
             </div>
           )}
@@ -667,12 +719,13 @@ function ScheduleEditModal(props: {
                 <span className="absolute left-3 top-2 text-gray-400 dark:text-gray-500">$</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.01"
                   min="0"
                   value={Number.isFinite(price1) ? price1 : 0}
                   onChange={(e) => setPrice1(parseFloat(e.target.value || "0"))}
                   disabled={saving}
-                  className="w-full border border-sand-200 dark:border-gray-700 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
+                  className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                 />
               </div>
             </div>
@@ -688,12 +741,13 @@ function ScheduleEditModal(props: {
                   <span className="absolute left-3 top-2 text-gray-400 dark:text-gray-500">$</span>
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
                     min="0"
                     value={Number.isFinite(price1) ? price1 : 0}
                     onChange={(e) => setPrice1(parseFloat(e.target.value || "0"))}
                     disabled={saving}
-                    className="w-full border border-sand-200 dark:border-gray-700 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
+                    className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -705,12 +759,13 @@ function ScheduleEditModal(props: {
                   <span className="absolute left-3 top-2 text-gray-400 dark:text-gray-500">$</span>
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
                     min="0"
                     value={Number.isFinite(price2) ? price2 : 0}
                     onChange={(e) => setPrice2(parseFloat(e.target.value || "0"))}
                     disabled={saving}
-                    className="w-full border border-sand-200 dark:border-gray-700 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
+                    className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -833,6 +888,111 @@ const defaultBulkRow = (): BulkAddRow => ({
 
 const inputClass =
   "border border-sand-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50";
+
+function SearchableClientSelect(props: {
+  clients: ClientOption[];
+  value: string;
+  onChange: (clientId: string) => void;
+  excludeId?: string;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  const { clients, value, onChange, excludeId, disabled, placeholder = "Select" } = props;
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = clients.find((c) => c.id === value);
+  const filtered = useMemo(() => {
+    const exclude = excludeId ? new Set([excludeId]) : new Set<string>();
+    const q = searchQuery.trim().toLowerCase();
+    return clients.filter(
+      (c) => !exclude.has(c.id) && (q === "" || c.name.toLowerCase().includes(q))
+    );
+  }, [clients, excludeId, searchQuery]);
+
+  useEffect(() => {
+    if (isOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 200) });
+      setSearchQuery("");
+      setTimeout(() => inputRef.current?.focus(), 0);
+    } else {
+      setPosition(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      const panel = document.getElementById("searchable-client-select-panel");
+      if (panel?.contains(target)) return;
+      setIsOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [isOpen]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => !disabled && setIsOpen((o) => !o)}
+        disabled={disabled}
+        className={inputClass + " w-full text-left flex items-center justify-between gap-1"}
+      >
+        <span className="truncate">{selected ? selected.name : placeholder}</span>
+        <span className="text-gray-400 shrink-0">▾</span>
+      </button>
+      {isOpen &&
+        position &&
+        createPortal(
+          <div
+            id="searchable-client-select-panel"
+            className="fixed z-[100] bg-white dark:bg-gray-800 border border-sand-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
+            style={{ top: position.top, left: position.left, width: position.width, minWidth: 200 }}
+          >
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setIsOpen(false);
+              }}
+              placeholder="Type to search..."
+              className="w-full px-3 py-2 border-b border-sand-200 dark:border-gray-700 text-sm focus:outline-none focus:ring-0 bg-sand-50 dark:bg-gray-900 text-charcoal dark:text-white placeholder-gray-400"
+            />
+            <ul className="max-h-48 overflow-y-auto py-1">
+              {filtered.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(c.id);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-sand-100 dark:hover:bg-gray-700 text-charcoal dark:text-white"
+                  >
+                    {c.name}
+                  </button>
+                </li>
+              ))}
+              {filtered.length === 0 && (
+                <li className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">No matches</li>
+              )}
+            </ul>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
 
 function BulkAddModal(props: {
   clients: ClientOption[];
@@ -969,7 +1129,7 @@ function BulkAddModal(props: {
                 <th className="text-left p-2 font-medium text-charcoal dark:text-white min-w-[100px]">Client 1</th>
                 <th className="text-left p-2 font-medium text-charcoal dark:text-white min-w-[100px]">Client 2</th>
                 <th className="text-left p-2 font-medium text-charcoal dark:text-white w-28">Location</th>
-                <th className="text-left p-2 font-medium text-charcoal dark:text-white w-20">Price</th>
+                <th className="text-left p-2 font-medium text-charcoal dark:text-white min-w-[100px]">Price</th>
                 <th className="text-left p-2 font-medium text-charcoal dark:text-white w-24">Use Pkg</th>
                 <th className="w-10 p-2" aria-label="Remove" />
               </tr>
@@ -1006,39 +1166,25 @@ function BulkAddModal(props: {
                     </select>
                   </td>
                   <td className="p-2">
-                    <select
+                    <SearchableClientSelect
+                      clients={props.clients}
                       value={row.clientId1}
-                      onChange={(e) => updateRow(i, { clientId1: e.target.value })}
+                      onChange={(clientId) => updateRow(i, { clientId1: clientId })}
+                      excludeId={row.sessionType === "Group" ? row.clientId2 : undefined}
                       disabled={saving}
-                      className={inputClass + " w-full"}
-                    >
-                      <option value="">Select</option>
-                      {props.clients
-                        .filter((c) => c.id !== (row.sessionType === "Group" ? row.clientId2 : ""))
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                    </select>
+                      placeholder="Select"
+                    />
                   </td>
                   <td className="p-2">
                     {row.sessionType === "Group" ? (
-                      <select
+                      <SearchableClientSelect
+                        clients={props.clients}
                         value={row.clientId2}
-                        onChange={(e) => updateRow(i, { clientId2: e.target.value })}
+                        onChange={(clientId) => updateRow(i, { clientId2: clientId })}
+                        excludeId={row.clientId1}
                         disabled={saving}
-                        className={inputClass + " w-full"}
-                      >
-                        <option value="">Select</option>
-                        {props.clients
-                          .filter((c) => c.id !== row.clientId1)
-                          .map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                      </select>
+                        placeholder="Select"
+                      />
                     ) : (
                       <span className="text-gray-400 text-xs">—</span>
                     )}
@@ -1055,46 +1201,49 @@ function BulkAddModal(props: {
                       <option value="Online">Online</option>
                     </select>
                   </td>
-                  <td className="p-2">
+                  <td className="p-2 min-w-[100px]">
                     {row.sessionType === "Single" ? (
                       <div className="relative">
-                        <span className="absolute left-2 top-1 text-gray-400 text-xs">$</span>
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                         <input
                           type="number"
+                          inputMode="decimal"
                           step="0.01"
                           min="0"
                           value={Number.isFinite(row.price1) ? row.price1 : 0}
                           onChange={(e) => updateRow(i, { price1: parseFloat(e.target.value || "0") })}
                           disabled={saving}
-                          className={inputClass + " w-full pl-5"}
+                          className={inputClass + " w-full min-w-[4.5rem] pl-6 py-2 text-base sm:text-sm"}
                         />
                       </div>
                     ) : (
-                      <div className="flex gap-1">
-                        <div className="relative flex-1">
-                          <span className="absolute left-1.5 top-1 text-gray-400 text-xs">$</span>
+                      <div className="flex gap-1 min-w-0">
+                        <div className="relative flex-1 min-w-0">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                           <input
                             type="number"
+                            inputMode="decimal"
                             step="0.01"
                             min="0"
                             placeholder="0"
                             value={Number.isFinite(row.price1) ? row.price1 : ""}
                             onChange={(e) => updateRow(i, { price1: parseFloat(e.target.value || "0") })}
                             disabled={saving}
-                            className={inputClass + " w-full pl-4 text-xs"}
+                            className={inputClass + " w-full min-w-[3.5rem] pl-5 py-2 text-base sm:text-xs"}
                           />
                         </div>
-                        <div className="relative flex-1">
-                          <span className="absolute left-1.5 top-1 text-gray-400 text-xs">$</span>
+                        <div className="relative flex-1 min-w-0">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                           <input
                             type="number"
+                            inputMode="decimal"
                             step="0.01"
                             min="0"
                             placeholder="0"
                             value={Number.isFinite(row.price2) ? row.price2 : ""}
                             onChange={(e) => updateRow(i, { price2: parseFloat(e.target.value || "0") })}
                             disabled={saving}
-                            className={inputClass + " w-full pl-4 text-xs"}
+                            className={inputClass + " w-full min-w-[3.5rem] pl-5 py-2 text-base sm:text-xs"}
                           />
                         </div>
                       </div>
