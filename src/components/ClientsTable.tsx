@@ -377,7 +377,7 @@ export function ClientsTable({ clients: initialClients }: ClientsTableProps) {
                         e.stopPropagation();
                         setShowDeleteConfirm(client.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-all"
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                       title="Delete client"
                     >
                       <Trash2 size={16} />

@@ -131,7 +131,7 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
                       e.stopPropagation();
                       setShowDeleteConfirm(session.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                     title="Delete session"
                   >
                     <Trash2 size={16} />
