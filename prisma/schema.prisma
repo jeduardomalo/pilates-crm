@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id                        String    @id @default(cuid())
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  name                      String
+  email                     String?   @unique
+  phone                     String?
+  notes                     String?
+  status                    String    @default("Active")
+  classPackBalance          Int       @default(0)
+  zeroBalanceWarningDismissed Boolean  @default(false)
+  inactiveNotificationDismissed Boolean @default(false)
+  sessions                  Session[]
+  scheduledParticipants     ScheduledParticipant[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  date      DateTime
+  type      String
+  location  String
+  price     Decimal  @default(0.00)
+  isPaid    Boolean  @default(false)
+  clients   Client[]
+  scheduledParticipants ScheduledParticipant[]
+}
+
+enum ScheduledClassStatus {
+  SCHEDULED
+  CANCELLED
+  NO_SHOW
+  POSTED
+}
+
+model ScheduledClass {
+  id          String               @id @default(cuid())
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  start       DateTime
+  end         DateTime
+  type        String
+  location    String
+  notes       String?
+
+  status      ScheduledClassStatus @default(SCHEDULED)
+  postedAt    DateTime?
+
+  googleEventId String?
+
+  participants ScheduledParticipant[]
+
+  @@index([start])
+  @@index([end])
+  @@index([status])
+}
+
+model ScheduledParticipant {
+  id               String         @id @default(cuid())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  scheduledClassId String
+  clientId         String
+
+  price            Decimal        @default(0.00)
+  isPaid           Boolean        @default(true)
+  usePackage       Boolean        @default(false)
+
+  postedSessionId  String?
+
+  scheduledClass   ScheduledClass @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
+  client           Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  postedSession    Session?       @relation(fields: [postedSessionId], references: [id], onDelete: SetNull)
+
+  @@unique([scheduledClassId, clientId])
+  @@index([clientId])
+  @@index([postedSessionId])
+}
+
+model GoogleIntegration {
+  // Singleton row; we’ll upsert with id = "default"
+  id                 String   @id
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  calendarId          String   @default("primary")
+
+  // Stored encrypted (app-level) to reduce risk of plaintext tokens at rest
+  accessTokenEnc      String
+  refreshTokenEnc     String
+  expiresAt           DateTime
+
+  connectedAt         DateTime @default(now())
+  lastSyncedAt        DateTime?
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String?  @unique // Login with username or email
+  email     String   @unique
+  password  String   // Will be hashed
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

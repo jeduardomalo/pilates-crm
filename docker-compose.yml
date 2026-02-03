@@ -1,0 +1,16 @@
+# Local Postgres for Pilates CRM. Run: docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pilates
+      POSTGRES_PASSWORD: pilates
+      POSTGRES_DB: pilates_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pilates_pg_data:/var/lib/postgresql/data
+
+volumes:
+  pilates_pg_data:

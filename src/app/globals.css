@@ -1,26 +1,39 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+  
+  --color-sand-50: #F9F8F6;
+  --color-sand-100: #F2F0EB;
+  --color-sand-200: #E5E0D8;
+  --color-sand-500: #A89F91;
+  --color-charcoal: #333333;
+  --color-sage: #8DA399;
+  --color-sage-light: #E8EFE9;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-sand-50);
+  color: var(--color-charcoal);
+}
+
+/* Improve tap responsiveness on touch devices */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+}
+
+/* Next.js portal container - ensure it doesn't cause visual issues */
+nextjs-portal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: -1;
 }

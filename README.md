@@ -1,36 +1,107 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pilates Studio CRM
 
-## Getting Started
+A boutique CRM and management platform for a Pilates Studio.
 
-First, run the development server:
+## Features
+
+- **Dashboard:** Overview of revenue, sessions, and active clients.
+- **Class Log:** Log sessions with Quick Add functionality.
+- **Schedule:** Plan upcoming classes and sync to Google Calendar (optional).
+- **Client Management:** Track client history and Class Pack balances.
+- **Reports:** Revenue analytics by location and class type.
+- **Notifications:** Zero balance, low balance, and inactive client alerts.
+
+## First-time setup (do it all)
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Database
+
+**Option A – Docker (recommended)**
+
+```bash
+npm run db:up    # starts Postgres in the background
+npm run db:push  # creates tables
+npm run db:generate
+```
+
+**Option B – Existing Postgres**
+
+Create a `.env` file (see `.env.example`) and set `DATABASE_URL` to your connection string, e.g.:
+
+```bash
+DATABASE_URL="postgresql://user:password@localhost:5432/your_db?connect_timeout=5"
+```
+
+Then:
+
+```bash
+npm run db:push
+npm run db:generate
+```
+
+### 3. Environment
+
+A `.env` file is included with defaults for the Docker Postgres (user `pilates`, password `pilates`, database `pilates_crm`). For auth and optional Google Calendar, set:
+
+- `NEXTAUTH_SECRET` – required for login (use a long random string).
+- `NEXTAUTH_URL` – e.g. `http://localhost:3000`.
+- Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` for Schedule → Google Calendar.
+
+### 4. Create admin user (required for login)
+
+Create the first admin so you can sign in:
+
+```bash
+npm run create-admin
+```
+
+This creates an admin with default credentials:
+
+- **Username:** `admin`
+- **Password:** `admin123`
+
+You can override them: `npm run create-admin [username] [password] [email] [name]`.  
+Example: `npm run create-admin myuser mypass admin@studio.com "My Name"`.
+
+**Important:** Change the default password after first login (e.g. run `create-admin` again with a new password).
+
+### 6. Seed (optional)
+
+If you have `data.csv` in the project root:
+
+```bash
+npm run db:seed
+```
+
+### 6. Run the app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script         | Description                    |
+|----------------|--------------------------------|
+| `npm run dev`  | Start Next.js dev server       |
+| `npm run db:up`| Start Postgres (Docker)        |
+| `npm run db:push` | Apply Prisma schema to DB   |
+| `npm run db:generate` | Regenerate Prisma client |
+| `npm run db:seed` | Seed from `data.csv`        |
+| `npm run create-admin` | Create/update admin user (default: username `admin`, password `admin123`) |
+| `npm run setup`| db:up + db:push + db:generate   |
 
-## Learn More
+## Tech stack
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Framework:** Next.js 16 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS v4
+- **Database:** PostgreSQL + Prisma ORM
+- **Auth:** NextAuth v5 (optional)
