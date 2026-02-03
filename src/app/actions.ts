@@ -14,20 +14,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 
 const DB_TIMEOUT_MS = 8000;
 
+const getClientsQuery = () =>
+  db.client.findMany({
+    include: {
+      sessions: { orderBy: { date: "desc" }, take: 1 },
+    },
+    orderBy: { name: "asc" },
+  });
+
+type GetClientsResult = Awaited<ReturnType<typeof getClientsQuery>>;
+
 export async function getClients() {
   try {
     const clients = await withTimeout(
-      db.client.findMany({
-      include: {
-        sessions: {
-          orderBy: { date: "desc" },
-          take: 1, // Only get the most recent session
-        },
-      },
-      orderBy: { name: "asc" },
-    }    ),
+      getClientsQuery(),
       DB_TIMEOUT_MS,
-      [] as Awaited<ReturnType<typeof db.client.findMany>>
+      [] as GetClientsResult
     );
 
     if (clients.length === 0) return [];
@@ -285,7 +287,7 @@ export async function getClientById(id: string) {
   }
 }
 
-export async function updateClient(clientId: string, data: { name?: string; email?: string; phone?: string | null }) {
+export async function updateClient(clientId: string, data: { name?: string; email?: string | null; phone?: string | null }) {
   try {
     await db.client.update({
       where: { id: clientId },

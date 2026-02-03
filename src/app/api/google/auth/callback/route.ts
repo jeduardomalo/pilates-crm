@@ -9,7 +9,8 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
 
-  const expectedState = cookies().get("google_oauth_state")?.value;
+  const cookieStore = await cookies();
+  const expectedState = cookieStore.get("google_oauth_state")?.value;
 
   if (!code) {
     return NextResponse.redirect(

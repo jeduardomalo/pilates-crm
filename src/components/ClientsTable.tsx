@@ -59,7 +59,7 @@ export function ClientsTable({ clients: initialClients }: ClientsTableProps) {
     const client = clients.find(c => c.id === editingField.clientId);
     if (!client) return;
 
-    const updateData: { name?: string; email?: string; phone?: string | null } = {};
+    const updateData: { name?: string; email?: string | null; phone?: string | null } = {};
     if (editingField.field === "name") {
       updateData.name = editValue.trim();
     } else if (editingField.field === "email") {
