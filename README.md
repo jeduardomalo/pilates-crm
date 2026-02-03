@@ -86,6 +86,16 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploy on Vercel
+
+The app is set up to deploy from [GitHub](https://github.com/jeduardomalo/pilates-crm). After connecting the repo to Vercel, set these **Environment Variables** in the Vercel project:
+
+- **`DATABASE_URL`** – PostgreSQL connection string (e.g. Neon, Supabase, or Vercel Postgres).
+- **`NEXTAUTH_SECRET`** – A long random string (e.g. `openssl rand -base64 32`).
+- **`NEXTAUTH_URL`** – Your production URL, e.g. `https://your-project.vercel.app`.
+
+Then run `npm run db:push` and `npm run create-admin` against your production DB so the schema and admin user exist. Redeploy after adding env vars if needed.
+
 ## Scripts
 
 | Script         | Description                    |
