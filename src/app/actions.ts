@@ -47,7 +47,7 @@ export async function getClients() {
       }
     }),
       DB_TIMEOUT_MS,
-      [] as Awaited<ReturnType<typeof db.session.findMany>>
+      [] as { clients: { id: string }[] }[]
     );
 
     // Create a Set of client IDs who have purchased packages
