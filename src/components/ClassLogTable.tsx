@@ -63,8 +63,9 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
               <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs">Location</th>
               <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-right">Price/Person</th>
               <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-right">Status</th>
+              <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-center">Package</th>
               <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-center">Receipt</th>
-              <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-center w-16">Actions</th>
+              <th className="px-6 py-4 font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-xs text-center min-w-[7rem] sticky right-0 bg-sand-50 dark:bg-gray-700 shadow-[-4px_0_8px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_8px_rgba(0,0,0,0.2)]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-sand-100 dark:divide-gray-700">
@@ -118,6 +119,45 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
                     );
                   })()}
                 </td>
+                <td className="px-6 py-4 text-center text-gray-600 dark:text-gray-300">
+                  {session.type === "Package Purchase"
+                    ? "—"
+                    : Number(session.price) === 0
+                      ? (() => {
+                          const clients = session.clients ?? [];
+                          const withBalance = clients
+                            .map((c: { name?: string; classPackBalance?: number }) => ({
+                              name: c.name ?? "—",
+                              balance: typeof c.classPackBalance === "number" ? c.classPackBalance : 0,
+                            }))
+                            .filter((c) => c.name !== "—");
+                          if (withBalance.length === 0) return "Yes";
+                          if (withBalance.length === 1) {
+                            const { name, balance } = withBalance[0];
+                            const isLow = balance <= 1;
+                            return (
+                              <span
+                                title={`${name}: ${balance} left`}
+                                className={isLow ? "text-amber-600 dark:text-amber-400 font-medium" : undefined}
+                              >
+                                Yes ({balance} left)
+                              </span>
+                            );
+                          }
+                          const tooltip = withBalance.map((c) => `${c.name}: ${c.balance} left`).join(" · ");
+                          const minLeft = Math.min(...withBalance.map((c) => c.balance));
+                          const isLow = minLeft <= 1;
+                          return (
+                            <span
+                              title={tooltip}
+                              className={isLow ? "text-amber-600 dark:text-amber-400 font-medium" : undefined}
+                            >
+                              Yes ({minLeft} left)
+                            </span>
+                          );
+                        })()
+                      : "No"}
+                </td>
                 <td className="px-6 py-4 text-center">
                   <button
                     onClick={() => setSelectedReceiptSession(session)}
@@ -127,7 +167,7 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
                     <Receipt size={18} />
                   </button>
                 </td>
-                <td className="px-6 py-4 text-center">
+                <td className="px-6 py-4 text-center min-w-[7rem] sticky right-0 bg-white dark:bg-gray-800 group-hover:bg-sand-50 dark:group-hover:bg-gray-700/50 shadow-[-4px_0_8px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_8px_rgba(0,0,0,0.2)]">
                   <div className="flex items-center justify-center gap-1">
                     <button
                       type="button"
@@ -156,7 +196,7 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
             ))}
             {displaySessions.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-400 dark:text-gray-500 italic font-serif">
                   No sessions logged yet. Add your first class.
                 </td>
               </tr>
@@ -173,8 +213,9 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
       )}
 
       {/* Edit Session Modal */}
-      {editingSession && (
+      {editingSession != null && (
         <EditSessionModal
+          key={editingSession.id}
           session={editingSession}
           onClose={() => setEditingSession(null)}
           onSaved={() => {
@@ -263,19 +304,25 @@ function EditSessionModal({
   const [location, setLocation] = useState(session.location || "");
   const [price, setPrice] = useState(Number(session.price) ?? 0);
   const [isPaid, setIsPaid] = useState(!!session.isPaid);
+  const isPackagePurchase = type === "Package Purchase";
+  const [usePackage, setUsePackage] = useState(
+    !isPackagePurchase && Number(session.price) === 0
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // Use noon UTC so the calendar day doesn't shift in any timezone
+      const isPkgType = type.trim() === "Package Purchase";
+      const finalPrice = !isPkgType && usePackage ? 0 : Number(price) || 0;
+      const finalPaid = !isPkgType && usePackage ? true : isPaid;
       const dateIso = `${date}T12:00:00.000Z`;
       const result = await updateSession(session.id, {
         date: dateIso,
         type: type.trim() || session.type,
         location: location.trim() || session.location,
-        price: Number(price) || 0,
-        isPaid,
+        price: finalPrice,
+        isPaid: finalPaid,
       });
       if (result.success) onSaved();
       else alert(result.error || "Failed to update session");
@@ -341,18 +388,43 @@ function EditSessionModal({
               type="number"
               min="0"
               step="0.01"
-              value={price}
+              value={usePackage ? 0 : price}
               onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white"
+              disabled={usePackage}
+              className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"
             />
+            {usePackage && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Price is 0 when using package.</p>
+            )}
           </div>
+          {!isPackagePurchase && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="edit-session-package"
+                checked={usePackage}
+                onChange={(e) => {
+                  setUsePackage(e.target.checked);
+                  if (e.target.checked) {
+                    setPrice(0);
+                    setIsPaid(true);
+                  }
+                }}
+                className="rounded border-sand-300 text-sage focus:ring-sage"
+              />
+              <label htmlFor="edit-session-package" className="text-sm text-gray-700 dark:text-gray-300">
+                Used package (class paid from pack)
+              </label>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="edit-session-paid"
               checked={isPaid}
               onChange={(e) => setIsPaid(e.target.checked)}
-              className="rounded border-sand-300 text-sage focus:ring-sage"
+              disabled={usePackage}
+              className="rounded border-sand-300 text-sage focus:ring-sage disabled:opacity-50"
             />
             <label htmlFor="edit-session-paid" className="text-sm text-gray-700 dark:text-gray-300">
               Paid

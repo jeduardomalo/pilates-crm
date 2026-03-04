@@ -805,6 +805,8 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
   success: boolean;
   error?: string;
   exportedCount?: number;
+  scheduledCount?: number;
+  totalCount?: number;
 }> {
   const integration = await getGoogleIntegration();
   if (!integration) {
@@ -823,6 +825,7 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
     orderBy: { start: "asc" },
   });
 
+  const scheduledInWeek = weekClasses.filter((sc) => sc.status === "SCHEDULED").length;
   let exportedCount = 0;
   try {
     for (const sc of weekClasses) {
@@ -902,7 +905,12 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
       }
     }
     revalidatePath("/schedule");
-    return { success: true, exportedCount };
+    return {
+      success: true,
+      exportedCount,
+      scheduledCount: scheduledInWeek,
+      totalCount: weekClasses.length,
+    };
   } catch (error) {
     console.error("Export week to Google failed:", error);
     return {

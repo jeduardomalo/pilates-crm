@@ -121,6 +121,7 @@ export function SchedulePageClient(props: {
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [defaultDateForNewClass, setDefaultDateForNewClass] = useState<string | null>(null);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   const searchParams = useSearchParams();
@@ -190,6 +191,13 @@ export function SchedulePageClient(props: {
 
   const openCreate = () => {
     setEditingId(null);
+    setDefaultDateForNewClass(null);
+    setIsEditOpen(true);
+  };
+
+  const openCreateForDay = (dateKey: string) => {
+    setEditingId(null);
+    setDefaultDateForNewClass(dateKey);
     setIsEditOpen(true);
   };
 
@@ -324,13 +332,25 @@ export function SchedulePageClient(props: {
                   setIsExporting(false);
                   if (result.success) {
                     const count = result.exportedCount ?? 0;
-                    const text =
-                      count === 0
-                        ? "No scheduled classes this week to export. Add classes and try again."
-                        : count === 1
+                    const total = result.totalCount ?? 0;
+                    const scheduled = result.scheduledCount ?? 0;
+                    let text: string;
+                    if (count > 0) {
+                      text =
+                        count === 1
                           ? "1 event exported to Google Calendar."
                           : `${count} events exported to Google Calendar.`;
-                    setExportMessage({ type: count === 0 ? "error" : "success", text });
+                    } else if (total > 0 && scheduled === 0) {
+                      text =
+                        "This week has classes but none are Scheduled (they may be Posted or Cancelled). Only classes with status Scheduled are exported. Add new scheduled classes or check existing ones.";
+                    } else {
+                      text =
+                        "No scheduled classes this week to export. Add classes with + Add class or Add multiple, then try again.";
+                    }
+                    setExportMessage({
+                      type: count === 0 ? "error" : "success",
+                      text,
+                    });
                     refreshWeek();
                   } else {
                     setExportMessage({ type: "error", text: result.error ?? "Export failed" });
@@ -384,11 +404,22 @@ export function SchedulePageClient(props: {
               key={key}
               className="bg-white dark:bg-gray-800 rounded-xl border border-sand-200 dark:border-gray-700 overflow-hidden"
             >
-              <div className="px-5 py-4 border-b border-sand-200 dark:border-gray-700 bg-sand-50 dark:bg-gray-900/40 flex items-center justify-between">
+              <div className="px-5 py-4 border-b border-sand-200 dark:border-gray-700 bg-sand-50 dark:bg-gray-900/40 flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-charcoal dark:text-white">
                   {format(d, "EEEE, MMM d")}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{list.length} items</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{list.length} items</span>
+                  <button
+                    type="button"
+                    onClick={() => openCreateForDay(key)}
+                    disabled={isPending || isRefreshing}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-sage bg-sage/10 text-sage hover:bg-sage/20 dark:bg-sage/20 dark:hover:bg-sage/30 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={14} />
+                    Add class
+                  </button>
+                </div>
               </div>
               <div className="p-5 space-y-3">
                 {list.length === 0 ? (
@@ -462,13 +493,19 @@ export function SchedulePageClient(props: {
 
       {isEditOpen && (
         <ScheduleEditModal
+          key={currentEditing?.id ?? `new-${defaultDateForNewClass ?? "today"}`}
           clients={props.clients}
           existing={currentEditing}
+          defaultDate={!currentEditing ? defaultDateForNewClass ?? undefined : undefined}
           onClose={() => {
             setIsEditOpen(false);
             setEditingId(null);
+            setDefaultDateForNewClass(null);
           }}
-          onSaved={onSaved}
+          onSaved={() => {
+            setDefaultDateForNewClass(null);
+            onSaved();
+          }}
         />
       )}
 
@@ -486,6 +523,7 @@ export function SchedulePageClient(props: {
 function ScheduleEditModal(props: {
   clients: ClientOption[];
   existing: ScheduleItem | null;
+  defaultDate?: string; // YYYY-MM-DD when adding from a day card
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -497,7 +535,17 @@ function ScheduleEditModal(props: {
   );
   const DEFAULT_DURATION_MINUTES = 55;
   const [startValue, setStartValue] = useState(() => {
-    const d = existing ? new Date(existing.start) : new Date();
+    if (existing) {
+      const d = new Date(existing.start);
+      d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15);
+      return toDateTimeLocalValue(d.toISOString());
+    }
+    if (props.defaultDate) {
+      const [y, m, day] = props.defaultDate.split("-").map(Number);
+      const d = new Date(y, m - 1, day, 9, 0, 0, 0);
+      return toDateTimeLocalValue(d.toISOString());
+    }
+    const d = new Date();
     d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15);
     return toDateTimeLocalValue(d.toISOString());
   });
