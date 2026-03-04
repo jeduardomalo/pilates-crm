@@ -125,12 +125,13 @@ export function ClassLogTable({ sessions, onClientClick, includePackagePurchases
                     : Number(session.price) === 0
                       ? (() => {
                           const clients = session.clients ?? [];
-                          const withBalance = clients
+                          type ClientWithBalance = { name: string; balance: number };
+                          const withBalance: ClientWithBalance[] = clients
                             .map((c: { name?: string; classPackBalance?: number }) => ({
                               name: c.name ?? "—",
                               balance: typeof c.classPackBalance === "number" ? c.classPackBalance : 0,
                             }))
-                            .filter((c) => c.name !== "—");
+                            .filter((c: ClientWithBalance) => c.name !== "—");
                           if (withBalance.length === 0) return "Yes";
                           if (withBalance.length === 1) {
                             const { name, balance } = withBalance[0];
