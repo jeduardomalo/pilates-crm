@@ -23,8 +23,13 @@ export default async function ClientsPage() {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-serif text-3xl text-charcoal">Clients</h2>
-          <p className="text-gray-500 mt-1">Manage your client list and balances.</p>
+          <h2 className="font-serif text-3xl text-charcoal dark:text-white">
+            Clients
+            <span className="ml-3 text-xl font-normal text-gray-500 dark:text-gray-400">
+              ({clients.length})
+            </span>
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your client list and balances.</p>
         </div>
         <AddClient />
       </div>

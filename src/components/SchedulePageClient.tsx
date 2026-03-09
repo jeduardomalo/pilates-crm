@@ -459,24 +459,27 @@ export function SchedulePageClient(props: {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (it.status === "SCHEDULED" && !isPending) openEdit(it.id);
+                              if (!isPending) openEdit(it.id);
                             }}
-                            disabled={isPending || it.status !== "SCHEDULED"}
-                            title={it.status !== "SCHEDULED" ? "Only scheduled classes can be edited" : "Edit class"}
+                            disabled={isPending}
+                            title="Edit class"
                             className="px-3 py-1.5 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => {
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               startTransition(async () => {
                                 await cancelScheduledClass(it.id, "CANCELLED");
                                 refreshWeek();
                                 router.refresh();
                               });
                             }}
-                            disabled={isPending || it.status !== "SCHEDULED"}
-                            className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30 transition-colors text-xs font-medium disabled:opacity-50"
+                            disabled={isPending || (it.status !== "SCHEDULED" && it.status !== "POSTED")}
+                            title={it.status !== "SCHEDULED" && it.status !== "POSTED" ? "Only scheduled or posted classes can be cancelled" : "Cancel class"}
+                            className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Cancel
                           </button>
