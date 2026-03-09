@@ -391,6 +391,7 @@ function EditSessionModal({
               step="0.01"
               value={usePackage ? 0 : price}
               onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+              onWheel={(e) => e.currentTarget.blur()}
               disabled={usePackage}
               className="w-full px-3 py-2 border border-sand-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-charcoal dark:text-white disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-gray-800"
             />

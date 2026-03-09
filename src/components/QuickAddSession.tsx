@@ -240,6 +240,7 @@ export function QuickAddSession({ clients }: { clients: any[] }) {
                       name="price" 
                       step="0.01" 
                       defaultValue="0.00" 
+                      onWheel={(e) => e.currentTarget.blur()}
                       disabled={isSubmitting}
                       className="w-full border border-sand-200 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 disabled:opacity-50" 
                     />
@@ -259,6 +260,7 @@ export function QuickAddSession({ clients }: { clients: any[] }) {
                         step="0.01" 
                         defaultValue="0.00" 
                         required 
+                        onWheel={(e) => e.currentTarget.blur()}
                         disabled={isSubmitting}
                         className="w-full border border-sand-200 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 disabled:opacity-50" 
                       />
@@ -274,6 +276,7 @@ export function QuickAddSession({ clients }: { clients: any[] }) {
                         step="0.01" 
                         defaultValue="0.00" 
                         required 
+                        onWheel={(e) => e.currentTarget.blur()}
                         disabled={isSubmitting}
                         className="w-full border border-sand-200 rounded-lg pl-6 pr-3 py-2 text-sm focus:outline-none focus:border-sand-500 disabled:opacity-50" 
                       />

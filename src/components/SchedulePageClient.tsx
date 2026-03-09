@@ -775,6 +775,7 @@ function ScheduleEditModal(props: {
                   min="0"
                   value={Number.isFinite(price1) ? price1 : 0}
                   onChange={(e) => setPrice1(parseFloat(e.target.value || "0"))}
+                  onWheel={(e) => e.currentTarget.blur()}
                   disabled={saving}
                   className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                 />
@@ -797,6 +798,7 @@ function ScheduleEditModal(props: {
                     min="0"
                     value={Number.isFinite(price1) ? price1 : 0}
                     onChange={(e) => setPrice1(parseFloat(e.target.value || "0"))}
+                    onWheel={(e) => e.currentTarget.blur()}
                     disabled={saving}
                     className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                   />
@@ -815,6 +817,7 @@ function ScheduleEditModal(props: {
                     min="0"
                     value={Number.isFinite(price2) ? price2 : 0}
                     onChange={(e) => setPrice2(parseFloat(e.target.value || "0"))}
+                    onWheel={(e) => e.currentTarget.blur()}
                     disabled={saving}
                     className="w-full min-w-[6rem] border border-sand-200 dark:border-gray-700 rounded-lg pl-7 pr-3 py-2.5 text-base sm:text-sm focus:outline-none focus:border-sand-500 dark:focus:border-sage bg-white dark:bg-gray-700 text-charcoal dark:text-white disabled:opacity-50"
                   />
@@ -1263,6 +1266,7 @@ function BulkAddModal(props: {
                           min="0"
                           value={Number.isFinite(row.price1) ? row.price1 : 0}
                           onChange={(e) => updateRow(i, { price1: parseFloat(e.target.value || "0") })}
+                          onWheel={(e) => e.currentTarget.blur()}
                           disabled={saving}
                           className={inputClass + " w-full min-w-[4.5rem] pl-6 py-2 text-base sm:text-sm"}
                         />
@@ -1279,6 +1283,7 @@ function BulkAddModal(props: {
                             placeholder="0"
                             value={Number.isFinite(row.price1) ? row.price1 : ""}
                             onChange={(e) => updateRow(i, { price1: parseFloat(e.target.value || "0") })}
+                            onWheel={(e) => e.currentTarget.blur()}
                             disabled={saving}
                             className={inputClass + " w-full min-w-[3.5rem] pl-5 py-2 text-base sm:text-xs"}
                           />
@@ -1293,6 +1298,7 @@ function BulkAddModal(props: {
                             placeholder="0"
                             value={Number.isFinite(row.price2) ? row.price2 : ""}
                             onChange={(e) => updateRow(i, { price2: parseFloat(e.target.value || "0") })}
+                            onWheel={(e) => e.currentTarget.blur()}
                             disabled={saving}
                             className={inputClass + " w-full min-w-[3.5rem] pl-5 py-2 text-base sm:text-xs"}
                           />
