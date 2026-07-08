@@ -7,8 +7,11 @@ import {
   cancelScheduledClass,
   createScheduledClass,
   createScheduledClasses,
+  deleteScheduledClass,
   exportScheduleWeekToGoogle,
   getScheduleWeek,
+  postScheduledClass,
+  restoreScheduledClass,
   updateScheduledClass,
 } from "@/app/actions";
 import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, X, AlertCircle } from "lucide-react";
@@ -69,6 +72,11 @@ function toDateTimeLocalValue(iso: string) {
   const hh = pad(d.getHours());
   const min = pad(d.getMinutes());
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+function dateKeyLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function addDays(d: Date, days: number) {
@@ -140,9 +148,9 @@ export function SchedulePageClient(props: {
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
-    for (const d of days) map.set(d.toISOString().slice(0, 10), []);
+    for (const d of days) map.set(dateKeyLocal(d), []);
     for (const it of items) {
-      const key = new Date(it.start).toISOString().slice(0, 10);
+      const key = dateKeyLocal(new Date(it.start));
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(it);
     }
@@ -204,6 +212,38 @@ export function SchedulePageClient(props: {
   const openEdit = (id: string) => {
     setEditingId(id);
     setIsEditOpen(true);
+  };
+
+  const runClassAction = (action: () => Promise<{ success?: boolean; error?: string }>, fallbackError: string) => {
+    startTransition(async () => {
+      const result = await action();
+      if (!result?.success) {
+        alert(result?.error || fallbackError);
+        return;
+      }
+      refreshWeek();
+      router.refresh();
+    });
+  };
+
+  const handlePostClass = (id: string) => {
+    runClassAction(() => postScheduledClass(id, "posted"), "Failed to post class.");
+  };
+
+  const handleCancelClass = (id: string) => {
+    runClassAction(() => cancelScheduledClass(id, "CANCELLED"), "Failed to cancel class.");
+  };
+
+  const handleRestoreClass = (id: string) => {
+    runClassAction(() => restoreScheduledClass(id), "Failed to restore class.");
+  };
+
+  const handleDeleteClass = (item: ScheduleItem) => {
+    const label = `${format(new Date(item.start), "MMM d, h:mm a")} - ${item.participants
+      .map((p) => p.clientName)
+      .join(", ")}`;
+    if (!window.confirm(`Delete this class?\n\n${label}`)) return;
+    runClassAction(() => deleteScheduledClass(item.id), "Failed to delete class.");
   };
 
   const onSaved = async () => {
@@ -397,7 +437,7 @@ export function SchedulePageClient(props: {
       {/* Week agenda */}
       <div className="space-y-4">
         {days.map((d) => {
-          const key = d.toISOString().slice(0, 10);
+          const key = dateKeyLocal(d);
           const list = itemsByDay.get(key) ?? [];
           return (
             <div
@@ -459,29 +499,69 @@ export function SchedulePageClient(props: {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!isPending) openEdit(it.id);
+                              if (!isPending && (it.status === "SCHEDULED" || it.status === "POSTED")) {
+                                openEdit(it.id);
+                              }
                             }}
-                            disabled={isPending}
-                            title="Edit class"
+                            disabled={isPending || (it.status !== "SCHEDULED" && it.status !== "POSTED")}
+                            title={
+                              it.status === "SCHEDULED" || it.status === "POSTED"
+                                ? "Edit class"
+                                : "Restore before editing"
+                            }
                             className="px-3 py-1.5 rounded-lg border border-sand-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-sand-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Edit
                           </button>
+                          {it.status === "SCHEDULED" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePostClass(it.id);
+                                }}
+                                disabled={isPending}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/30 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Post
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCancelClass(it.id);
+                                }}
+                                disabled={isPending}
+                                className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          )}
+                          {(it.status === "CANCELLED" || it.status === "NO_SHOW") && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestoreClass(it.id);
+                              }}
+                              disabled={isPending}
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-200 dark:hover:bg-blue-900/30 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Restore
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              startTransition(async () => {
-                                await cancelScheduledClass(it.id, "CANCELLED");
-                                refreshWeek();
-                                router.refresh();
-                              });
+                              handleDeleteClass(it);
                             }}
-                            disabled={isPending || (it.status !== "SCHEDULED" && it.status !== "POSTED")}
-                            title={it.status !== "SCHEDULED" && it.status !== "POSTED" ? "Only scheduled or posted classes can be cancelled" : "Cancel class"}
-                            className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/20 dark:text-rose-200 dark:hover:bg-rose-900/30 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isPending}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-900/50 dark:bg-gray-900 dark:text-rose-200 dark:hover:bg-rose-900/20 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Cancel
+                            Delete
                           </button>
                         </div>
                       </div>
@@ -1054,7 +1134,7 @@ function BulkAddModal(props: {
   onSaved: () => void;
 }) {
   const today = new Date();
-  const dateDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const dateDefault = dateKeyLocal(today);
 
   const [date, setDate] = useState(dateDefault);
   const [rows, setRows] = useState<BulkAddRow[]>([defaultBulkRow(), defaultBulkRow()]);
@@ -1134,7 +1214,7 @@ function BulkAddModal(props: {
       }
       props.onSaved();
       props.onClose();
-    } catch (e) {
+    } catch {
       alert("Failed to add classes. Please try again.");
     } finally {
       setSaving(false);

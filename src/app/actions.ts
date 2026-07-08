@@ -723,7 +723,7 @@ function buildGoogleDescription(input: {
   type: string;
   location: string;
   notes?: string | null;
-  participants: Array<{ name: string; price: number; isPaid: boolean; usePackage: boolean }>;
+  participants: Array<{ name: string; price: number; usePackage: boolean }>;
 }) {
   const lines: string[] = [];
   lines.push(`Type: ${input.type}`);
@@ -731,10 +731,7 @@ function buildGoogleDescription(input: {
   lines.push("");
   lines.push("Participants:");
   for (const p of input.participants) {
-    const flags = [
-      p.isPaid ? "Paid" : "Pending",
-      p.usePackage ? "Uses package" : null,
-    ].filter(Boolean);
+    const flags = [p.usePackage ? "Uses package" : null].filter(Boolean);
     lines.push(`- ${p.name}: $${p.price.toFixed(2)}${flags.length ? ` (${flags.join(", ")})` : ""}`);
   }
   if (input.notes && input.notes.trim()) {
@@ -751,6 +748,41 @@ function ensureScheduledClassModel() {
       "Prisma client is out of date (missing ScheduledClass). Run: npx prisma generate. Then restart the dev server (npm run dev)."
     );
   }
+}
+
+function validateScheduledClassInput(input: ScheduledClassInput) {
+  const start = new Date(input.start);
+  const end = new Date(input.end);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+    return { success: false as const, error: "Invalid start/end time." };
+  }
+  if (!input.participants?.length || input.participants.length > 2) {
+    return { success: false as const, error: "Must have 1-2 participants." };
+  }
+  const uniqueClientIds = new Set(input.participants.map((p) => p.clientId));
+  if (uniqueClientIds.size !== input.participants.length) {
+    return { success: false as const, error: "Duplicate client selected." };
+  }
+  return { success: true as const, start, end };
+}
+
+function postedSessionPaymentFor(participant: ScheduledParticipantInput, previousUsePackage = false, previousIsPaid = false) {
+  if (participant.usePackage) {
+    return { price: 0, isPaid: true };
+  }
+  return {
+    price: participant.price,
+    isPaid: previousUsePackage ? false : previousIsPaid,
+  };
+}
+
+function revalidateScheduleDataPaths() {
+  revalidatePath("/schedule");
+  revalidatePath("/");
+  revalidatePath("/clients");
+  revalidatePath("/reports");
+  revalidatePath("/collectibles");
+  revalidatePath("/notifications");
 }
 
 export async function getScheduleWeek(weekStartIso: string) {
@@ -838,7 +870,6 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
         participants: sc.participants.map((p) => ({
           name: p.client.name,
           price: Number(p.price),
-          isPaid: p.isPaid,
           usePackage: p.usePackage,
         })),
       });
@@ -922,18 +953,9 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
 
 export async function createScheduledClass(input: ScheduledClassInput) {
   try {
-    const start = new Date(input.start);
-    const end = new Date(input.end);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-      return { success: false, error: "Invalid start/end time." };
-    }
-    if (!input.participants?.length || input.participants.length > 2) {
-      return { success: false, error: "Must have 1–2 participants." };
-    }
-    const uniqueClientIds = new Set(input.participants.map((p) => p.clientId));
-    if (uniqueClientIds.size !== input.participants.length) {
-      return { success: false, error: "Duplicate client selected." };
-    }
+    const validation = validateScheduledClassInput(input);
+    if (!validation.success) return validation;
+    const { start, end } = validation;
 
     const created = await db.scheduledClass.create({
       data: {
@@ -971,18 +993,11 @@ export async function createScheduledClasses(inputs: ScheduledClassInput[]) {
   let created = 0;
   try {
     for (const input of inputs) {
-      const start = new Date(input.start);
-      const end = new Date(input.end);
-      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-        return { success: false, error: "Invalid start/end time.", count: created };
+      const validation = validateScheduledClassInput(input);
+      if (!validation.success) {
+        return { success: false, error: validation.error, count: created };
       }
-      if (!input.participants?.length || input.participants.length > 2) {
-        return { success: false, error: "Must have 1–2 participants.", count: created };
-      }
-      const uniqueClientIds = new Set(input.participants.map((p) => p.clientId));
-      if (uniqueClientIds.size !== input.participants.length) {
-        return { success: false, error: "Duplicate client selected.", count: created };
-      }
+      const { start, end } = validation;
 
       await db.scheduledClass.create({
         data: {
@@ -1019,50 +1034,185 @@ export async function updateScheduledClass(id: string, input: ScheduledClassInpu
   try {
     const existing = await db.scheduledClass.findUnique({
       where: { id },
-      include: { participants: { include: { client: true } } },
+      include: {
+        participants: {
+          include: { client: true, postedSession: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
     if (!existing) return { success: false, error: "Scheduled class not found." };
-    if (existing.status !== "SCHEDULED") {
-      return { success: false, error: "Only scheduled classes can be edited." };
+    if (existing.status !== "SCHEDULED" && existing.status !== "POSTED") {
+      return { success: false, error: "Restore cancelled classes before editing them." };
     }
 
-    const start = new Date(input.start);
-    const end = new Date(input.end);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-      return { success: false, error: "Invalid start/end time." };
-    }
-    if (!input.participants?.length || input.participants.length > 2) {
-      return { success: false, error: "Must have 1–2 participants." };
-    }
-    const uniqueClientIds = new Set(input.participants.map((p) => p.clientId));
-    if (uniqueClientIds.size !== input.participants.length) {
-      return { success: false, error: "Duplicate client selected." };
-    }
+    const validation = validateScheduledClassInput(input);
+    if (!validation.success) return validation;
+    const { start, end } = validation;
 
-    const updated = await db.$transaction(async (tx) => {
-      await tx.scheduledParticipant.deleteMany({ where: { scheduledClassId: id } });
-      return tx.scheduledClass.update({
-        where: { id },
-        data: {
-          start,
-          end,
-          type: input.type,
-          location: input.location,
-          notes: input.notes ?? null,
-          participants: {
-            create: input.participants.map((p) => ({
-              clientId: p.clientId,
-              price: p.price,
-              isPaid: p.isPaid,
-              usePackage: p.usePackage,
-            })),
+    if (existing.status === "SCHEDULED") {
+      await db.$transaction(async (tx) => {
+        await tx.scheduledParticipant.deleteMany({ where: { scheduledClassId: id } });
+        await tx.scheduledClass.update({
+          where: { id },
+          data: {
+            start,
+            end,
+            type: input.type,
+            location: input.location,
+            notes: input.notes ?? null,
+            participants: {
+              create: input.participants.map((p) => ({
+                clientId: p.clientId,
+                price: p.price,
+                isPaid: p.isPaid,
+                usePackage: p.usePackage,
+              })),
+            },
           },
-        },
-        include: { participants: { include: { client: true } } },
+        });
       });
-    });
+    } else {
+      const usedExistingIds = new Set<string>();
+      const matchedParticipants = input.participants.map((participant) => {
+        let current = existing.participants.find(
+          (p) => !usedExistingIds.has(p.id) && p.clientId === participant.clientId
+        );
+        if (!current) {
+          current = existing.participants.find((p) => !usedExistingIds.has(p.id));
+        }
+        if (current) usedExistingIds.add(current.id);
+        return { current, participant };
+      });
+      const removedParticipants = existing.participants.filter((p) => !usedExistingIds.has(p.id));
 
-    revalidatePath("/schedule");
+      await db.$transaction(async (tx) => {
+        await tx.scheduledClass.update({
+          where: { id },
+          data: {
+            start,
+            end,
+            type: input.type,
+            location: input.location,
+            notes: input.notes ?? null,
+          },
+        });
+
+        for (const removed of removedParticipants) {
+          if (removed.usePackage) {
+            await tx.client.update({
+              where: { id: removed.clientId },
+              data: { classPackBalance: { increment: 1 } },
+            });
+          }
+          if (removed.postedSessionId) {
+            await tx.scheduledParticipant.update({
+              where: { id: removed.id },
+              data: { postedSessionId: null },
+            });
+            await tx.session.delete({ where: { id: removed.postedSessionId } });
+          }
+          await tx.scheduledParticipant.delete({ where: { id: removed.id } });
+        }
+
+        for (const { current, participant } of matchedParticipants) {
+          if (current) {
+            if (current.usePackage && (!participant.usePackage || current.clientId !== participant.clientId)) {
+              await tx.client.update({
+                where: { id: current.clientId },
+                data: { classPackBalance: { increment: 1 } },
+              });
+            }
+            if (participant.usePackage && (!current.usePackage || current.clientId !== participant.clientId)) {
+              await tx.client.update({
+                where: { id: participant.clientId },
+                data: { classPackBalance: { decrement: 1 } },
+              });
+            }
+
+            const payment = postedSessionPaymentFor(
+              participant,
+              current.usePackage,
+              current.postedSession?.isPaid ?? false
+            );
+
+            await tx.scheduledParticipant.update({
+              where: { id: current.id },
+              data: {
+                clientId: participant.clientId,
+                price: participant.price,
+                isPaid: payment.isPaid,
+                usePackage: participant.usePackage,
+              },
+            });
+
+            if (current.postedSessionId) {
+              await tx.session.update({
+                where: { id: current.postedSessionId },
+                data: {
+                  date: start,
+                  type: input.type,
+                  location: input.location,
+                  price: payment.price,
+                  isPaid: payment.isPaid,
+                  clients: { set: [{ id: participant.clientId }] },
+                },
+              });
+            } else {
+              const session = await tx.session.create({
+                data: {
+                  date: start,
+                  type: input.type,
+                  location: input.location,
+                  price: payment.price,
+                  isPaid: payment.isPaid,
+                  clients: { connect: { id: participant.clientId } },
+                },
+              });
+              await tx.scheduledParticipant.update({
+                where: { id: current.id },
+                data: { postedSessionId: session.id },
+              });
+            }
+          } else {
+            const payment = postedSessionPaymentFor(participant);
+            const session = await tx.session.create({
+              data: {
+                date: start,
+                type: input.type,
+                location: input.location,
+                price: payment.price,
+                isPaid: payment.isPaid,
+                clients: { connect: { id: participant.clientId } },
+              },
+            });
+            await tx.scheduledParticipant.create({
+              data: {
+                scheduledClassId: id,
+                clientId: participant.clientId,
+                price: participant.price,
+                isPaid: payment.isPaid,
+                usePackage: participant.usePackage,
+                postedSessionId: session.id,
+              },
+            });
+            if (participant.usePackage) {
+              await tx.client.update({
+                where: { id: participant.clientId },
+                data: { classPackBalance: { decrement: 1 } },
+              });
+            }
+          }
+        }
+
+        await tx.client.updateMany({
+          where: { id: { in: input.participants.map((p) => p.clientId) } },
+          data: { inactiveNotificationDismissed: false },
+        });
+      });
+    }
+
+    revalidateScheduleDataPaths();
     return { success: true };
   } catch (error) {
     console.error("Failed to update scheduled class:", error);
@@ -1089,11 +1239,74 @@ export async function cancelScheduledClass(
       data: { status, googleEventId: null },
     });
 
-    revalidatePath("/schedule");
+    revalidateScheduleDataPaths();
     return { success: true };
   } catch (error) {
     console.error("Failed to cancel scheduled class:", error);
     return { success: false, error: "Failed to cancel scheduled class" };
+  }
+}
+
+export async function restoreScheduledClass(id: string) {
+  try {
+    const existing = await db.scheduledClass.findUnique({ where: { id } });
+    if (!existing) return { success: false, error: "Scheduled class not found." };
+    if (existing.status !== "CANCELLED" && existing.status !== "NO_SHOW") {
+      return { success: false, error: "Only cancelled or no-show classes can be restored." };
+    }
+
+    await db.scheduledClass.update({
+      where: { id },
+      data: { status: "SCHEDULED", postedAt: null },
+    });
+
+    revalidateScheduleDataPaths();
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to restore scheduled class:", error);
+    return { success: false, error: "Failed to restore scheduled class" };
+  }
+}
+
+export async function deleteScheduledClass(id: string) {
+  try {
+    const existing = await db.scheduledClass.findUnique({
+      where: { id },
+      include: {
+        participants: { include: { postedSession: true } },
+      },
+    });
+    if (!existing) return { success: false, error: "Scheduled class not found." };
+
+    if (existing.googleEventId) {
+      await deleteGoogleEvent(existing.googleEventId);
+    }
+
+    await db.$transaction(async (tx) => {
+      for (const participant of existing.participants) {
+        if (existing.status === "POSTED" && participant.usePackage) {
+          await tx.client.update({
+            where: { id: participant.clientId },
+            data: { classPackBalance: { increment: 1 } },
+          });
+        }
+        if (participant.postedSessionId) {
+          await tx.scheduledParticipant.update({
+            where: { id: participant.id },
+            data: { postedSessionId: null },
+          });
+          await tx.session.delete({ where: { id: participant.postedSessionId } });
+        }
+      }
+
+      await tx.scheduledClass.delete({ where: { id } });
+    });
+
+    revalidateScheduleDataPaths();
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete scheduled class:", error);
+    return { success: false, error: "Failed to delete scheduled class" };
   }
 }
 
@@ -1124,7 +1337,7 @@ export async function postScheduledClass(
           googleEventId: null,
         },
       });
-      revalidatePath("/schedule");
+      revalidateScheduleDataPaths();
       return { success: true };
     }
 
@@ -1142,8 +1355,8 @@ export async function postScheduledClass(
             date: scheduled.start,
             type: scheduled.type,
             location: scheduled.location,
-            price: Number(participant.price),
-            isPaid: false, // Posted from schedule: leave unpaid for verification in Collectibles
+            price: participant.usePackage ? 0 : Number(participant.price),
+            isPaid: participant.usePackage,
             clients: { connect: { id: participant.clientId } },
           },
         });
@@ -1172,12 +1385,7 @@ export async function postScheduledClass(
       });
     });
 
-    revalidatePath("/schedule");
-    revalidatePath("/");
-    revalidatePath("/clients");
-    revalidatePath("/reports");
-    revalidatePath("/collectibles");
-    revalidatePath("/notifications");
+    revalidateScheduleDataPaths();
 
     return { success: true };
   } catch (error) {

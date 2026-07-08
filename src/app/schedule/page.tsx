@@ -1,4 +1,4 @@
-import { getClients, getScheduleWeek, postOverdueScheduledClasses } from "@/app/actions";
+import { getClients, getScheduleWeek } from "@/app/actions";
 import { SchedulePageClient } from "@/components/SchedulePageClient";
 import { getGoogleConnectionStatus } from "@/lib/googleCalendar";
 
@@ -13,7 +13,6 @@ function startOfWeekSunday(d: Date) {
 }
 
 export default async function SchedulePage() {
-  await postOverdueScheduledClasses(); // Auto-post overdue classes as unpaid for Collectibles
   const clients = await getClients();
   const clientOptions = clients.map((c) => ({ id: c.id, name: c.name }));
 
@@ -27,7 +26,7 @@ export default async function SchedulePage() {
         <div>
           <h2 className="font-serif text-3xl text-charcoal dark:text-white">Schedule</h2>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Plan upcoming sessions. Past classes are posted into revenue and totals (unpaid) for verification in Collectibles.
+            Plan upcoming sessions. Post completed classes when they are ready to enter revenue and client history.
           </p>
         </div>
       </div>
@@ -41,4 +40,3 @@ export default async function SchedulePage() {
     </div>
   );
 }
-
