@@ -37,8 +37,8 @@ test('week navigation remains at local midnight over DST and year boundaries', (
     const end = addDays(start, 7);
     assert.equal(start.getDay(), 0);
     assert.equal(end.getDay(), 0);
-    assert.equal(start.getHours(), 0);
-    assert.equal(end.getHours(), 0);
+    assert.equal(start.getTime(), new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime());
+    assert.equal(end.getTime(), new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime());
     assert.equal(addDays(end, -7).getTime(), start.getTime());
     const last = addDays(start, 6);
     last.setHours(23, 59);
@@ -59,4 +59,21 @@ test('UTC server week reproduces the missing Saturday reported in the video', ()
   assert.ok(new Date('2026-09-12T09:00') < oldServerStart);
   const correctedStart = startOfWeekLocal(oldServerStart);
   assert.ok(inWeek(new Date('2026-09-12T09:00'), correctedStart, addDays(correctedStart, 7)));
+});
+
+
+test('a skipped Sunday midnight does not shift later day or week boundaries', () => {
+  if (!['America/Santiago', 'America/Havana'].includes(process.env.TZ)) return;
+  const day = process.env.TZ === 'America/Santiago' ? '2026-09-06T12:00' : '2026-03-08T12:00';
+  const start = startOfWeekLocal(new Date(day));
+  assert.equal(start.getHours(), 1); // Midnight does not exist on this Sunday.
+  const monday = addDays(start, 1);
+  assert.equal(monday.getHours(), 0);
+  const nextWeek = addDays(start, 7);
+  assert.equal(nextWeek.getHours(), 0);
+  const firstAppointment = new Date(nextWeek);
+  firstAppointment.setMinutes(30);
+  assert.ok(inWeek(firstAppointment, nextWeek, addDays(nextWeek, 7)));
+  const previousWeek = addDays(start, -7);
+  assert.equal(previousWeek.getHours(), 0);
 });

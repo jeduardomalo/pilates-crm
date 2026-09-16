@@ -5,9 +5,9 @@ export function dateKeyLocal(date: Date) {
 }
 
 export function addDays(date: Date, days: number) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
+  // Construct each boundary independently: some DST transitions skip midnight.
+  // Carrying a normalized 01:00 into the next day would hide its first hour.
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
 export function startOfWeekLocal(date: Date) {
