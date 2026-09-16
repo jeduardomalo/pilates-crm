@@ -1,23 +1,13 @@
-import { getClients, getScheduleWeek } from "@/app/actions";
+import { getClients } from "@/app/actions";
 import { SchedulePageClient } from "@/components/SchedulePageClient";
 import { getGoogleConnectionStatus } from "@/lib/googleCalendar";
 
 export const revalidate = 0;
 
-function startOfWeekSunday(d: Date) {
-  const day = d.getDay(); // 0 = Sunday
-  const start = new Date(d);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - day);
-  return start;
-}
-
 export default async function SchedulePage() {
   const clients = await getClients();
   const clientOptions = clients.map((c) => ({ id: c.id, name: c.name }));
 
-  const weekStart = startOfWeekSunday(new Date());
-  const initialWeek = await getScheduleWeek(weekStart.toISOString());
   const google = await getGoogleConnectionStatus();
 
   return (
@@ -33,8 +23,6 @@ export default async function SchedulePage() {
 
       <SchedulePageClient
         clients={clientOptions}
-        initialWeekStartIso={weekStart.toISOString()}
-        initialItems={initialWeek}
         googleStatus={google}
       />
     </div>

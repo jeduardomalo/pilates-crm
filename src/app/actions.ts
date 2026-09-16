@@ -785,10 +785,13 @@ function revalidateScheduleDataPaths() {
   revalidatePath("/notifications");
 }
 
-export async function getScheduleWeek(weekStartIso: string) {
+export async function getScheduleWeek(weekStartIso: string, weekEndIso: string) {
   ensureScheduledClassModel();
   const start = new Date(weekStartIso);
-  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const end = new Date(weekEndIso);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    throw new Error("Invalid schedule date range.");
+  }
 
   const items = await db.scheduledClass.findMany({
     where: {
@@ -833,7 +836,7 @@ function isGoogleEventNotFound(e: unknown): boolean {
   return false;
 }
 
-export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<{
+export async function exportScheduleWeekToGoogle(weekStartIso: string, weekEndIso: string): Promise<{
   success: boolean;
   error?: string;
   exportedCount?: number;
@@ -847,7 +850,10 @@ export async function exportScheduleWeekToGoogle(weekStartIso: string): Promise<
 
   ensureScheduledClassModel();
   const start = new Date(weekStartIso);
-  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const end = new Date(weekEndIso);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    throw new Error("Invalid schedule date range.");
+  }
 
   const weekClasses = await db.scheduledClass.findMany({
     where: { start: { gte: start, lt: end } },

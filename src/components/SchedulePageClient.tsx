@@ -16,6 +16,7 @@ import {
 } from "@/app/actions";
 import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, X, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { addDays, dateKeyLocal, startOfWeekLocal } from "@/lib/scheduleDates";
 
 type ClientOption = { id: string; name: string };
 
@@ -74,17 +75,6 @@ function toDateTimeLocalValue(iso: string) {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
-function dateKeyLocal(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function addDays(d: Date, days: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + days);
-  return x;
-}
-
 function statusLabel(status: string) {
   switch (status) {
     case "SCHEDULED":
@@ -114,7 +104,46 @@ function statusClasses(status: string) {
   }
 }
 
-export function SchedulePageClient(props: {
+type SchedulePageProps = {
+  clients: ClientOption[];
+  googleStatus: GoogleStatus;
+};
+
+export function SchedulePageClient(props: SchedulePageProps) {
+  const [initial, setInitial] = useState<{ start: string; items: ScheduleItem[] } | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    // The browser's calendar days must also define the database query window.
+    const start = startOfWeekLocal(new Date());
+    getScheduleWeek(start.toISOString(), addDays(start, 7).toISOString())
+      .then((items) => {
+        if (!cancelled) setInitial({ start: start.toISOString(), items });
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => { cancelled = true; };
+  }, [attempt]);
+
+  if (!initial) {
+    return error ? (
+      <div role="alert">
+        Could not load schedule.
+        <button type="button" className="ml-2 underline" onClick={() => {
+          setError(false);
+          setAttempt((value) => value + 1);
+        }}>Try again</button>
+      </div>
+    ) : <div role="status">Loading schedule...</div>;
+  }
+
+  return <ScheduleAgenda {...props} initialWeekStartIso={initial.start} initialItems={initial.items} />;
+}
+
+function ScheduleAgenda(props: {
   clients: ClientOption[];
   initialWeekStartIso: string;
   initialItems: ScheduleItem[];
@@ -164,7 +193,7 @@ export function SchedulePageClient(props: {
   const refreshWeek = (newWeekStartIso?: string) => {
     const target = newWeekStartIso ?? weekStartIso;
     setIsRefreshing(true);
-    getScheduleWeek(target)
+    getScheduleWeek(target, addDays(new Date(target), 7).toISOString())
       .then((next) => {
         const list = Array.isArray(next) ? next : [];
         setItems(list as ScheduleItem[]);
@@ -190,10 +219,7 @@ export function SchedulePageClient(props: {
   };
 
   const handleThisWeek = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const start = startOfDay(today);
-    start.setDate(start.getDate() - day);
+    const start = startOfWeekLocal(new Date());
     refreshWeek(start.toISOString());
   };
 
@@ -368,7 +394,7 @@ export function SchedulePageClient(props: {
                 onClick={async () => {
                   setExportMessage(null);
                   setIsExporting(true);
-                  const result = await exportScheduleWeekToGoogle(weekStartIso);
+                  const result = await exportScheduleWeekToGoogle(weekStartIso, addDays(weekStart, 7).toISOString());
                   setIsExporting(false);
                   if (result.success) {
                     const count = result.exportedCount ?? 0;

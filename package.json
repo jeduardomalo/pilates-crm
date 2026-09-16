@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:schedule": "node scripts/test-schedule-dates.cjs",
     "create-admin": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node prisma/create-admin.ts",
     "db:up": "docker compose up -d",
     "db:push": "prisma db push",
