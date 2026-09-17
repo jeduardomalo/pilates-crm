@@ -552,6 +552,9 @@ function ScheduleAgenda(props: {
                               >
                                 Post
                               </button>
+                            </>
+                          )}
+                          {(it.status === "SCHEDULED" || it.status === "POSTED") && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -563,7 +566,6 @@ function ScheduleAgenda(props: {
                               >
                                 Cancel
                               </button>
-                            </>
                           )}
                           {(it.status === "CANCELLED" || it.status === "NO_SHOW") && (
                             <button

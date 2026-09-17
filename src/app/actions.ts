@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { cancelScheduledClassRecord } from "@/lib/cancelScheduledClass";
 import { revalidatePath } from "next/cache";
 import {
   createGoogleEvent,
@@ -1233,17 +1234,15 @@ export async function cancelScheduledClass(
   try {
     const existing = await db.scheduledClass.findUnique({ where: { id } });
     if (!existing) return { success: false, error: "Scheduled class not found." };
-    if (existing.status !== "SCHEDULED") {
-      return { success: false, error: "Only scheduled classes can be cancelled." };
+    if (existing.status !== "SCHEDULED" && existing.status !== "POSTED") {
+      return { success: false, error: "Only scheduled or posted classes can be cancelled." };
     }
 
     if (existing.googleEventId) {
       await deleteGoogleEvent(existing.googleEventId);
     }
-    await db.scheduledClass.update({
-      where: { id },
-      data: { status, googleEventId: null },
-    });
+    const result = await cancelScheduledClassRecord(db, id, existing.status, status);
+    if (!result.success) return result;
 
     revalidateScheduleDataPaths();
     return { success: true };
@@ -1321,6 +1320,9 @@ export async function postScheduledClass(
   resolution: "posted" | "cancelled" | "no_show"
 ) {
   try {
+    if (resolution === "cancelled" || resolution === "no_show") {
+      return await cancelScheduledClass(id, resolution === "cancelled" ? "CANCELLED" : "NO_SHOW");
+    }
     const scheduled = await db.scheduledClass.findUnique({
       where: { id },
       include: {
@@ -1330,21 +1332,6 @@ export async function postScheduledClass(
     if (!scheduled) return { success: false, error: "Scheduled class not found." };
     if (scheduled.status !== "SCHEDULED") {
       return { success: false, error: "This class has already been resolved." };
-    }
-
-    if (resolution === "cancelled" || resolution === "no_show") {
-      if (scheduled.googleEventId) {
-        await deleteGoogleEvent(scheduled.googleEventId);
-      }
-      await db.scheduledClass.update({
-        where: { id },
-        data: {
-          status: resolution === "cancelled" ? "CANCELLED" : "NO_SHOW",
-          googleEventId: null,
-        },
-      });
-      revalidateScheduleDataPaths();
-      return { success: true };
     }
 
     if (scheduled.googleEventId) {
