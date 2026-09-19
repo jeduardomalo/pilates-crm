@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getClientById, updateClientBalance } from "@/app/actions";
 import { ClassLogTable } from "@/components/ClassLogTable";
+import { UpcomingClassesTable } from "@/components/UpcomingClassesTable";
 import { MetricCard } from "@/components/MetricCard";
 import { AddPackage } from "@/components/AddPackage";
 import { X, AlertTriangle, Edit2, Check } from "lucide-react";
@@ -229,6 +230,8 @@ export function ClientDetailModal({ clientId, onClose, onClientClick }: ClientDe
                   value={`$${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
                 />
               </div>
+
+              <UpcomingClassesTable classes={client?.upcomingClasses ?? []} />
 
               <div className="space-y-4">
                 <h3 className="font-serif text-xl text-charcoal">Client History</h3>

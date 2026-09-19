@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { ClassLogTable } from "@/components/ClassLogTable";
+import { UpcomingClassesTable } from "@/components/UpcomingClassesTable";
 import { MetricCard } from "@/components/MetricCard";
 
 export default async function ClientDetailPage(props: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,34 @@ export default async function ClientDetailPage(props: { params: Promise<{ id: st
       } 
     }
   });
+
+  const upcoming = client
+    ? await db.scheduledParticipant.findMany({
+        where: {
+          clientId: params.id,
+          scheduledClass: { status: "SCHEDULED" },
+        },
+        include: {
+          scheduledClass: {
+            include: {
+              participants: { select: { client: { select: { id: true, name: true } } } },
+            },
+          },
+        },
+        orderBy: { scheduledClass: { start: "asc" } },
+      })
+    : [];
+
+  const upcomingClasses = upcoming.map((p) => ({
+    id: p.id,
+    start: p.scheduledClass.start.toISOString(),
+    end: p.scheduledClass.end.toISOString(),
+    type: p.scheduledClass.type,
+    location: p.scheduledClass.location,
+    usePackage: p.usePackage,
+    price: p.price.toString(),
+    clientNames: p.scheduledClass.participants.map((sp) => sp.client.name),
+  }));
 
   if (!client) {
     return <div className="p-12 text-center text-gray-500">Client not found</div>;
@@ -61,6 +90,8 @@ export default async function ClientDetailPage(props: { params: Promise<{ id: st
           value={`$${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} 
         />
       </div>
+
+      <UpcomingClassesTable classes={upcomingClasses} />
 
       <div className="space-y-4">
         <h3 className="font-serif text-xl text-charcoal">Session History</h3>

@@ -265,6 +265,34 @@ export async function getClientById(id: string) {
     // Check if client has ever purchased a package
     const hasPurchasedPackage = client.sessions.some(s => s.type === "Package Purchase");
 
+    // Include scheduled (calendar) classes so the profile reflects what's on the schedule
+    const upcoming = await db.scheduledParticipant.findMany({
+      where: {
+        clientId: id,
+        scheduledClass: { status: "SCHEDULED" },
+      },
+      include: {
+        scheduledClass: {
+          include: {
+            participants: { select: { client: { select: { id: true, name: true } } } },
+          },
+        },
+      },
+      orderBy: { scheduledClass: { start: "asc" } },
+    });
+
+    const upcomingClasses = upcoming.map((p) => ({
+      id: p.id,
+      start: p.scheduledClass.start.toISOString(),
+      end: p.scheduledClass.end.toISOString(),
+      type: p.scheduledClass.type,
+      location: p.scheduledClass.location,
+      usePackage: p.usePackage,
+      price: p.price.toString(),
+      clientNames: p.scheduledClass.participants.map((sp) => sp.client.name),
+    }));
+
+
     // Serialize for client component
     const sessions = client.sessions.map(s => ({
       ...s,
@@ -283,6 +311,7 @@ export async function getClientById(id: string) {
       createdAt: client.createdAt.toISOString(),
       updatedAt: client.updatedAt.toISOString(),
       sessions,
+      upcomingClasses,
       hasPurchasedPackage,
       zeroBalanceWarningDismissed: client.zeroBalanceWarningDismissed ?? false,
       inactiveNotificationDismissed: client.inactiveNotificationDismissed ?? false,
