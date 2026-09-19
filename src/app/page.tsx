@@ -1,10 +1,14 @@
-import { getClients, getSessions } from "./actions";
+import { getClients, getSessions, postOverdueScheduledClasses } from "./actions";
 import { DashboardWrapper } from "@/components/DashboardWrapper";
 import { QuickAddSession } from "@/components/QuickAddSession";
 
 export const revalidate = 0; // Disable caching for this page
 
 export default async function Home() {
+  // Auto-post classes whose time has passed so history, balances and
+  // collectibles stay up to date without a cron job.
+  await postOverdueScheduledClasses();
+
   const clients = await getClients();
   const rawSessions = await getSessions();
 

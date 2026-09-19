@@ -1,10 +1,14 @@
-import { getClients } from "@/app/actions";
+import { getClients, postOverdueScheduledClasses } from "@/app/actions";
 import { SchedulePageClient } from "@/components/SchedulePageClient";
 import { getGoogleConnectionStatus } from "@/lib/googleCalendar";
 
 export const revalidate = 0;
 
 export default async function SchedulePage() {
+  // Auto-post classes whose time has passed so the week view stays clean
+  // and history/balances reflect what already happened.
+  await postOverdueScheduledClasses();
+
   const clients = await getClients();
   const clientOptions = clients.map((c) => ({ id: c.id, name: c.name }));
 
